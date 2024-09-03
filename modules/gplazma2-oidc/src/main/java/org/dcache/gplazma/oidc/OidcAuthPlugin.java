@@ -1,6 +1,7 @@
 package org.dcache.gplazma.oidc;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
@@ -8,25 +9,18 @@ import com.google.common.net.InternetDomainName;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.apache.http.client.HttpClient;
 import org.dcache.auth.BearerTokenCredential;
 import org.dcache.auth.OAuthProviderPrincipal;
+import org.dcache.auth.OidcClaimsContainerPrincipal;
 import org.dcache.auth.Origin;
 import org.dcache.auth.attributes.Restriction;
 import org.dcache.gplazma.AuthenticationException;
@@ -68,6 +62,8 @@ public class OidcAuthPlugin implements GPlazmaAuthenticationPlugin {
 
     private final TokenProcessor tokenProcessor;
     private final Set<String> audienceTargets;
+
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public OidcAuthPlugin(Properties properties) {
         this(properties, buildProcessor(properties));
@@ -205,6 +201,19 @@ public class OidcAuthPlugin implements GPlazmaAuthenticationPlugin {
             var profileResult = profile.processClaims(idp, result.claims());
             identifiedPrincipals.addAll(profileResult.getPrincipals());
             profileResult.getRestriction().ifPresent(restrictions::add);
+
+            try {
+                String encodedClaims = token.toString().split("\\.")[1];
+                byte[] decodedClaims = Base64.getUrlDecoder().decode(encodedClaims);
+                JsonNode jsonClaims = mapper.readValue(
+                        new String(decodedClaims, StandardCharsets.UTF_8),
+                        JsonNode.class
+                );
+                identifiedPrincipals.add(new OidcClaimsContainerPrincipal(jsonClaims, idp.getName()));
+            } catch (IOException e) {
+                LOG.warn("Conversion to JSON failed, no Claims Container Principal added.");
+            }
+
         } catch (UnableToProcess e) {
             throw new AuthenticationException("Unable to process token: " + e.getMessage());
         }

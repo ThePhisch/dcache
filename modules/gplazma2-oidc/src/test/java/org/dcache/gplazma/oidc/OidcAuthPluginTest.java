@@ -31,22 +31,14 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import org.dcache.auth.BearerTokenCredential;
-import org.dcache.auth.EmailAddressPrincipal;
-import org.dcache.auth.EntitlementPrincipal;
-import org.dcache.auth.ExemptFromNamespaceChecks;
-import org.dcache.auth.FullNamePrincipal;
-import org.dcache.auth.GroupNamePrincipal;
-import org.dcache.auth.LoAPrincipal;
-import org.dcache.auth.OidcSubjectPrincipal;
-import org.dcache.auth.OpenIdGroupPrincipal;
-import org.dcache.auth.PasswordCredential;
-import org.dcache.auth.UserNamePrincipal;
+
+import org.dcache.auth.*;
 import org.dcache.auth.attributes.Restriction;
 import org.dcache.gplazma.AuthenticationException;
 import org.dcache.gplazma.oidc.profiles.WlcgProfile;
 import org.dcache.gplazma.oidc.profiles.OidcProfile;
 import org.dcache.gplazma.oidc.profiles.ScitokensProfile;
+import org.dcache.gplazma.pyscript.PyscriptPlugin;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentMatchers;
@@ -685,6 +677,43 @@ public class OidcAuthPluginTest {
         assertThat(principals, not(hasItem(any(GroupNamePrincipal.class))));
         assertThat(principals, not(hasItem(any(ExemptFromNamespaceChecks.class))));
         assertThat(restrictions, is(empty()));
+    }
+
+    @Test
+    public void pyscriptOidcTest() throws Exception {
+        /*
+         * Test whether the validated claims from the token are properly passed to pyscript
+         * which will then set required principals based on the content of the json
+         * (note that the json is parsed in python).
+         */
+        // Initialise pyscript
+        Properties properties = new Properties();
+        properties.setProperty("gplazma.pyscript.workdir", "src/test/pyscript");
+        PyscriptPlugin plugin = new PyscriptPlugin(properties);
+
+        // Create information for JWT
+        ObjectMapper mapper = new ObjectMapper();
+        String j1 = "{\"sub\":\"32018447-cf2e-4496-8362-24f736e95c0b\",\"email_verified\":true,\"realm_access\":{\"roles\":[\"admin\", \"default-roles-production\",\"batch\",\"it\",\"windows\",\"owncloud\",\"wlan_desy\",\"afs\",\"mailbox\",\"offline_access\",\"bastion\",\"uma_authorization\",\"unix\",\"eduroam\"]},\"name\":\"Philipp Anton Schwarz\",\"groups\":[\"/it\",\"/BPMusers\"],\"preferred_username\":\"paschwar\",\"given_name\":\"Philipp Anton\",\"family_name\":\"Schwarz\",\"email\":\"anton.schwarz@desy.de\"}";
+        JsonNode n1 = mapper.readValue(j1, JsonNode.class);
+
+        // Generate profile and jwt
+        var profile = aProfile().thatReturns(aProfileResult()
+                        .withPrincipals(Collections.singleton(new OidcSubjectPrincipal("sub-claim-value", "MY-OP"))))
+                .build();  // note that principals do not contain the big JSON claim
+        var op = anIp("MY-OP").withProfile(profile).build();
+        var claims = claims().withStringClaim("sub", "sub-claim-value").build();
+        given(aPlugin().withTokenProcessor(aTokenProcessor().thatReturns(aResult().from(op).containing(claims))));
+        given(aJwt().withPayloadClaim("exp", Instant.now().plus(5, MINUTES)).withPayloadClaim("jsonclaim", n1));
+
+        // invoke all
+        when(invoked().withBearerToken(jwt));
+
+        // call mapping step only
+        plugin.map(principals);
+
+        // perform assertions
+        assertThat(principals, hasItem(new UidPrincipal(0)));
+        assertThat(principals, hasItem(new GidPrincipal(0, true)));
     }
 
     @Test

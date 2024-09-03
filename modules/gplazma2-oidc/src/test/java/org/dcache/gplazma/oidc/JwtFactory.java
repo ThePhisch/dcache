@@ -17,6 +17,7 @@
  */
 package org.dcache.gplazma.oidc;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigInteger;
@@ -74,6 +75,12 @@ public class JwtFactory {
         public Builder withPayloadClaim(String key, Instant when) {
             checkState(payload.isEmpty());
             payloadObject.put(key, when.getEpochSecond());
+            return this;
+        }
+
+        public Builder withPayloadClaim(String key, JsonNode node) {
+            checkState(payload.isEmpty());
+            payloadObject.put(key, node);
             return this;
         }
 

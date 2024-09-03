@@ -506,6 +506,19 @@ public class Subjects {
                     String op = value.substring(atIndex + 1);
                     principal = new OidcSubjectPrincipal(oidcClaim, op);
                     break;
+                case "oidcclaims":
+                    atIndex = value.lastIndexOf('@');
+                    checkArgument(atIndex != -1, "format for 'oidcclaims' principals is <value>@<OP>");
+                    oidcClaim = value.substring(0, atIndex);
+                    op = value.substring(atIndex + 1);
+                    principal = new OidcClaimsContainerPrincipal(
+                            OidcClaimsContainerPrincipal.makeJsonNode(oidcClaim),
+                            op
+                    );
+                    break;
+                case "oauthprovider":
+                    principal = new OAuthProviderPrincipal(value);
+                    break;
                 case "email":
                     principal = new EmailAddressPrincipal(value);
                     break;
@@ -575,6 +588,9 @@ public class Subjects {
         } else if (principal instanceof OidcSubjectPrincipal) {
             sb.append("oidc:");
             appendOptionallyInQuotes(sb, principal.getName());
+        } else if (principal instanceof OidcClaimsContainerPrincipal) {
+            sb.append("oidcclaims:");
+            sb.append(((OidcClaimsContainerPrincipal) principal).fullStringify());
         } else if (principal instanceof EmailAddressPrincipal) {
             sb.append("email:");
             appendOptionallyInQuotes(sb, principal.getName());
@@ -621,6 +637,9 @@ public class Subjects {
             appendOptionallyInQuotes(sb, principal.getName());
         } else if (principal instanceof OpenIdGroupPrincipal) {
             sb.append("oidc-group:");
+            appendOptionallyInQuotes(sb, principal.getName());
+        } else if (principal instanceof OAuthProviderPrincipal) {
+            sb.append("oauthprovider:");
             appendOptionallyInQuotes(sb, principal.getName());
         } else if (principal instanceof Origin) {
             sb.append("origin:").append(principal.getName());
